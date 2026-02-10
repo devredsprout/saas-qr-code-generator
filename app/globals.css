@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+* { -webkit-font-smoothing: antialiased; }
+::selection { background: rgba(110,203,181,.15); }
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-thumb { background: #E9E8E4; border-radius: 9px; }
+
+@layer components {
+  .card { @apply bg-brand-card border border-brand-border rounded-2xl transition-all duration-200; }
+  .card:hover { box-shadow: 0 8px 32px rgba(0,0,0,.04); border-color: #A8DFD0; }
+  .input-field { @apply w-full px-4 py-3 rounded-xl border-[1.5px] border-brand-border bg-brand-card-alt text-brand-text text-sm font-sans outline-none transition-all duration-200; }
+  .input-field:focus { @apply border-brand-mint bg-white; box-shadow: 0 0 0 3px rgba(110,203,181,.08); }
+  .input-field::placeholder { @apply text-brand-text-ghost; }
+  .btn-primary { @apply inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl border-none bg-brand-dark text-white text-sm font-bold cursor-pointer transition-all duration-200; }
+  .btn-primary:hover { @apply -translate-y-px; box-shadow: 0 8px 24px rgba(0,0,0,.15); }
+  .btn-primary:disabled { @apply bg-brand-border text-brand-text-dim cursor-not-allowed translate-y-0 shadow-none; }
+  .btn-mint { background: linear-gradient(135deg, #6ECBB5, #3AAE8C); @apply text-white; }
+  .btn-mint:hover { box-shadow: 0 8px 28px rgba(110,203,181,.22); }
+  .btn-ghost { @apply bg-transparent border border-brand-border text-brand-text-mid text-sm font-semibold px-4 py-2.5 rounded-xl cursor-pointer transition-all duration-200; }
+  .btn-ghost:hover { @apply border-brand-border-focus bg-brand-card-alt; }
+  .badge { @apply inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10.5px] font-bold; background: rgba(110,203,181,.08); color: #3AAE8C; }
+  .label { @apply block mb-1.5 text-[11px] font-bold text-brand-text-dim uppercase tracking-wider; }
+}
