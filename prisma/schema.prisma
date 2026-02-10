@@ -1,0 +1,170 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ══════════════════════════════
+// AUTH (NextAuth)
+// ══════════════════════════════
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ══════════════════════════════
+// USER
+// ══════════════════════════════
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  plan          Plan      @default(FREE)
+
+  accounts      Account[]
+  sessions      Session[]
+  qrCodes       QRCode[]
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+enum Plan {
+  FREE
+  PRO
+  BUSINESS
+  AGENCY
+  ENTERPRISE
+}
+
+// ══════════════════════════════
+// QR CODE
+// ══════════════════════════════
+
+model QRCode {
+  id              String      @id @default(cuid())
+  shortCode       String      @unique
+  name            String
+  type            QRType      @default(STATIC)
+  contentType     ContentType @default(URL)
+
+  // Data
+  staticData      String?     @db.Text
+  destinationUrl  String?     @db.Text
+
+  // Status
+  isActive        Boolean     @default(true)
+  isPaused        Boolean     @default(false)
+
+  // Appearance
+  fgColor         String      @default("#000000")
+  bgColor         String      @default("#FFFFFF")
+  size            Int         @default(400)
+  errorCorrection String      @default("M")
+
+  // UTM
+  utmSource       String?
+  utmMedium       String?
+  utmCampaign     String?
+  utmContent      String?
+  utmTerm         String?
+
+  // Security
+  safePreview     Boolean     @default(false)
+  password        String?
+
+  // Relations
+  userId          String
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scans           Scan[]
+
+  // Timestamps
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  expiresAt       DateTime?
+
+  @@index([userId])
+  @@index([shortCode])
+}
+
+enum QRType {
+  STATIC
+  DYNAMIC
+}
+
+enum ContentType {
+  URL
+  TEXT
+  EMAIL
+  PHONE
+  WIFI
+  VCARD
+}
+
+// ══════════════════════════════
+// SCAN (Analytics)
+// ══════════════════════════════
+
+model Scan {
+  id          String   @id @default(cuid())
+  qrCodeId    String
+  qrCode      QRCode   @relation(fields: [qrCodeId], references: [id], onDelete: Cascade)
+
+  // Geo
+  ip          String?
+  country     String?
+  city        String?
+  region      String?
+
+  // Device
+  userAgent   String?  @db.Text
+  deviceType  String?
+  os          String?
+  browser     String?
+
+  // Referrer
+  referrer    String?
+
+  scannedAt   DateTime @default(now())
+
+  @@index([qrCodeId])
+  @@index([scannedAt])
+  @@index([qrCodeId, scannedAt])
+}
