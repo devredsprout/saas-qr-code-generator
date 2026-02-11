@@ -8,7 +8,7 @@ datasource db {
 }
 
 // ══════════════════════════════
-// AUTH (NextAuth)
+// AUTH + TEAMS
 // ══════════════════════════════
 
 model Account {
@@ -25,7 +25,6 @@ model Account {
   id_token          String? @db.Text
   session_state     String?
   user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-
   @@unique([provider, providerAccountId])
 }
 
@@ -41,13 +40,8 @@ model VerificationToken {
   identifier String
   token      String   @unique
   expires    DateTime
-
   @@unique([identifier, token])
 }
-
-// ══════════════════════════════
-// USER
-// ══════════════════════════════
 
 model User {
   id            String    @id @default(cuid())
@@ -57,10 +51,14 @@ model User {
   image         String?
   password      String?
   plan          Plan      @default(FREE)
+  trialEndsAt   DateTime?
 
   accounts      Account[]
   sessions      Session[]
-  qrCodes       QRCode[]
+  
+  // Team membership
+  teamMembers   TeamMember[]
+  ownedTeams    Team[]        @relation("TeamOwner")
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -74,9 +72,75 @@ enum Plan {
   ENTERPRISE
 }
 
+model Team {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  ownerId     String
+  owner       User     @relation("TeamOwner", fields: [ownerId], references: [id])
+  
+  // Branding (for agency white-label)
+  logo        String?
+  brandColor  String?  @default("#6ECBB5")
+  customDomain String?
+  
+  members     TeamMember[]
+  qrCodes     QRCode[]
+  folders     Folder[]
+  restaurants Restaurant[]
+  products    Product[]
+  clients     Client[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model TeamMember {
+  id        String   @id @default(cuid())
+  userId    String
+  teamId    String
+  role      Role     @default(VIEWER)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  @@unique([userId, teamId])
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+// Agency clients (sub-accounts)
+model Client {
+  id          String   @id @default(cuid())
+  teamId      String
+  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name        String
+  email       String?
+  logo        String?
+  brandColor  String?
+  domain      String?
+  qrCodes     QRCode[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 // ══════════════════════════════
-// QR CODE
+// QR CODE MANAGEMENT
 // ══════════════════════════════
+
+model Folder {
+  id       String   @id @default(cuid())
+  teamId   String
+  team     Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name     String
+  color    String?  @default("#6ECBB5")
+  qrCodes  QRCode[]
+  createdAt DateTime @default(now())
+}
 
 model QRCode {
   id              String      @id @default(cuid())
@@ -92,12 +156,20 @@ model QRCode {
   // Status
   isActive        Boolean     @default(true)
   isPaused        Boolean     @default(false)
+  isArchived      Boolean     @default(false)
 
   // Appearance
   fgColor         String      @default("#000000")
   bgColor         String      @default("#FFFFFF")
+  logoUrl         String?
   size            Int         @default(400)
   errorCorrection String      @default("M")
+
+  // Organization
+  tags            String[]    @default([])
+  notes           String?     @db.Text
+  folderId        String?
+  folder          Folder?     @relation(fields: [folderId], references: [id])
 
   // UTM
   utmSource       String?
@@ -110,18 +182,36 @@ model QRCode {
   safePreview     Boolean     @default(false)
   password        String?
 
-  // Relations
-  userId          String
-  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  scans           Scan[]
+  // Scheduling
+  scheduledChanges ScheduledChange[]
+  
+  // Version history for dynamic QR
+  urlHistory      UrlHistory[]
 
-  // Timestamps
+  // Relations
+  teamId          String
+  team            Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  clientId        String?
+  client          Client?     @relation(fields: [clientId], references: [id])
+  scans           Scan[]
+  
+  // Restaurant link
+  restaurantId    String?
+  restaurant      Restaurant? @relation(fields: [restaurantId], references: [id])
+  tableNumber     Int?
+  
+  // Product link
+  productId       String?
+  product         Product?    @relation(fields: [productId], references: [id])
+
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
   expiresAt       DateTime?
 
-  @@index([userId])
+  @@index([teamId])
   @@index([shortCode])
+  @@index([folderId])
+  @@index([isArchived])
 }
 
 enum QRType {
@@ -136,10 +226,43 @@ enum ContentType {
   PHONE
   WIFI
   VCARD
+  WHATSAPP
+  UPI
+  RESTAURANT_MENU
+  PRODUCT_PAGE
+  SOCIAL_BIO
+  EVENT
+  PDF
+  REVIEW
+  GS1_DIGITAL_LINK
+  MULTI_URL
+}
+
+model UrlHistory {
+  id          String   @id @default(cuid())
+  qrCodeId    String
+  qrCode      QRCode   @relation(fields: [qrCodeId], references: [id], onDelete: Cascade)
+  url         String   @db.Text
+  changedAt   DateTime @default(now())
+  changedBy   String?
+  @@index([qrCodeId])
+}
+
+model ScheduledChange {
+  id             String   @id @default(cuid())
+  qrCodeId       String
+  qrCode         QRCode   @relation(fields: [qrCodeId], references: [id], onDelete: Cascade)
+  newDestination String   @db.Text
+  activateAt     DateTime
+  deactivateAt   DateTime?
+  executed       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  @@index([qrCodeId])
+  @@index([activateAt])
 }
 
 // ══════════════════════════════
-// SCAN (Analytics)
+// ANALYTICS
 // ══════════════════════════════
 
 model Scan {
@@ -150,8 +273,11 @@ model Scan {
   // Geo
   ip          String?
   country     String?
+  countryCode String?
   city        String?
   region      String?
+  lat         Float?
+  lng         Float?
 
   // Device
   userAgent   String?  @db.Text
@@ -159,12 +285,247 @@ model Scan {
   os          String?
   browser     String?
 
+  // UTM captured
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+
   // Referrer
   referrer    String?
+  
+  // Unique tracking
+  fingerprint String?
 
   scannedAt   DateTime @default(now())
 
   @@index([qrCodeId])
   @@index([scannedAt])
   @@index([qrCodeId, scannedAt])
+  @@index([country])
+}
+
+// ══════════════════════════════
+// RESTAURANT MODE
+// ══════════════════════════════
+
+model Restaurant {
+  id              String   @id @default(cuid())
+  teamId          String
+  team            Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name            String
+  description     String?
+  logo            String?
+  coverImage      String?
+  phone           String?
+  whatsapp        String?
+  address         String?
+  
+  // Features
+  callWaiter      Boolean  @default(true)
+  showBill        Boolean  @default(true)
+  orderEnabled    Boolean  @default(false)
+  feedbackEnabled Boolean  @default(true)
+  
+  // Multi-language
+  languages       String[] @default(["en"])
+  defaultLanguage String   @default("en")
+  
+  // Theme
+  accentColor     String   @default("#6ECBB5")
+  
+  categories      MenuCategory[]
+  qrCodes         QRCode[]
+  orders          Order[]
+  feedback        Feedback[]
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model MenuCategory {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  name         String
+  nameHi       String?    // Hindi
+  description  String?
+  sortOrder    Int        @default(0)
+  isActive     Boolean    @default(true)
+  items        MenuItem[]
+  createdAt    DateTime   @default(now())
+  @@index([restaurantId])
+}
+
+model MenuItem {
+  id           String       @id @default(cuid())
+  categoryId   String
+  category     MenuCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name         String
+  nameHi       String?
+  description  String?
+  descHi       String?
+  price        Float
+  image        String?
+  
+  // Dietary
+  isVeg        Boolean @default(false)
+  isVegan      Boolean @default(false)
+  isNonVeg     Boolean @default(false)
+  isGlutenFree Boolean @default(false)
+  isNutFree    Boolean @default(false)
+  isDairyFree  Boolean @default(false)
+  isHalal      Boolean @default(false)
+  isJain       Boolean @default(false)
+  spiceLevel   Int     @default(0) // 0-3
+  allergens    String[] @default([])
+  calories     Int?
+  
+  // Status
+  isAvailable  Boolean @default(true)
+  isFeatured   Boolean @default(false)
+  sortOrder    Int     @default(0)
+  
+  orderItems   OrderItem[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  @@index([categoryId])
+}
+
+model Order {
+  id           String      @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  tableNumber  Int
+  status       OrderStatus @default(RECEIVED)
+  notes        String?
+  totalAmount  Float       @default(0)
+  customerName String?
+  customerPhone String?
+  
+  items        OrderItem[]
+  
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  @@index([restaurantId])
+  @@index([status])
+}
+
+enum OrderStatus {
+  RECEIVED
+  PREPARING
+  READY
+  SERVED
+  CANCELLED
+}
+
+model OrderItem {
+  id         String   @id @default(cuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+  quantity   Int      @default(1)
+  notes      String?
+  price      Float
+}
+
+model Feedback {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  tableNumber  Int?
+  rating       Int        // 1-5
+  comment      String?
+  customerName String?
+  createdAt    DateTime   @default(now())
+}
+
+// ══════════════════════════════
+// PACKAGING / PRODUCT MODE
+// ══════════════════════════════
+
+model Product {
+  id          String   @id @default(cuid())
+  teamId      String
+  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name        String
+  description String?  @db.Text
+  image       String?
+  
+  // GS1 fields
+  gtin        String?
+  batchNumber String?
+  expiryDate  DateTime?
+  serialNumber String?
+  
+  // Verify
+  verifyEnabled Boolean @default(false)
+  verifySerial  String?  @unique
+  
+  // Multi-language
+  descHi      String?  @db.Text
+  ingredients String?  @db.Text
+  ingredientsHi String? @db.Text
+  
+  // Landing page
+  websiteUrl  String?
+  whatsapp    String?
+  
+  qrCodes     QRCode[]
+  verifications ProductVerification[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ProductVerification {
+  id         String   @id @default(cuid())
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  serial     String
+  isValid    Boolean  @default(true)
+  scannedAt  DateTime @default(now())
+  ip         String?
+  location   String?
+  @@index([productId])
+  @@index([serial])
+}
+
+// ══════════════════════════════
+// PAYMENTS (Razorpay)
+// ══════════════════════════════
+
+model Subscription {
+  id              String   @id @default(cuid())
+  teamId          String
+  razorpaySubId   String?  @unique
+  razorpayPlanId  String?
+  plan            Plan     @default(FREE)
+  status          SubStatus @default(TRIALING)
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  cancelledAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  @@index([teamId])
+}
+
+enum SubStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+}
+
+model Payment {
+  id              String   @id @default(cuid())
+  teamId          String
+  razorpayPayId   String?  @unique
+  razorpayOrderId String?
+  amount          Int      // in paise
+  currency        String   @default("INR")
+  status          String
+  plan            Plan
+  createdAt       DateTime @default(now())
 }
