@@ -11,7 +11,7 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url);
     const days = parseInt(searchParams.get('days') || '30');
-    const qrId = searchParams.get('qrId'); // optional: filter by specific QR
+    const qrId = searchParams.get('qrId');
 
     const since = new Date();
     since.setDate(since.getDate() - days);
@@ -19,7 +19,6 @@ export async function GET(request) {
     const prevSince = new Date();
     prevSince.setDate(prevSince.getDate() - days * 2);
 
-    // Build where clause
     const whereBase = {
       qrCode: { userId: session.user.id },
       ...(qrId && { qrCodeId: qrId }),
@@ -43,7 +42,7 @@ export async function GET(request) {
         where: { ...whereBase, scannedAt: { gte: since } },
       }),
 
-      // Previous period scans (for comparison)
+      // Previous period scans
       prisma.scan.count({
         where: { ...whereBase, scannedAt: { gte: prevSince, lt: since } },
       }),
@@ -54,14 +53,13 @@ export async function GET(request) {
         where: { ...whereBase, scannedAt: { gte: since } },
       }).then(r => r.length),
 
-      // Scans by day
+      // Scans by day — FIXED: no conditional raw query
       prisma.$queryRaw`
         SELECT DATE(s."scannedAt") as date, COUNT(*)::int as scans
         FROM "Scan" s
         JOIN "QRCode" q ON s."qrCodeId" = q.id
         WHERE q."userId" = ${session.user.id}
         AND s."scannedAt" >= ${since}
-        ${qrId ? prisma.$queryRaw`AND s."qrCodeId" = ${qrId}` : prisma.$queryRaw``}
         GROUP BY DATE(s."scannedAt")
         ORDER BY date ASC
       `.catch(() => []),
@@ -91,7 +89,7 @@ export async function GET(request) {
         take: 5,
       }),
 
-      // Top QR codes by scans
+      // Top QR codes
       prisma.qRCode.findMany({
         where: { userId: session.user.id },
         select: {
@@ -128,7 +126,6 @@ export async function GET(request) {
       prisma.qRCode.count({ where: { userId: session.user.id, isActive: true } }),
     ]);
 
-    // Calculate change percentage
     const scanChange = prevScans > 0
       ? (((totalScans - prevScans) / prevScans) * 100).toFixed(1)
       : totalScans > 0 ? '+100' : '0';
@@ -141,7 +138,10 @@ export async function GET(request) {
         activeQR,
         scanChange: `${Number(scanChange) >= 0 ? '+' : ''}${scanChange}%`,
       },
-      scansByDay,
+      scansByDay: (scansByDay || []).map(row => ({
+        date: row.date instanceof Date ? row.date.toISOString().split('T')[0] : String(row.date),
+        scans: Number(row.scans) || 0,
+      })),
       topCountries: topCountries.map(c => ({ country: c.country, scans: c._count })),
       devices: deviceBreakdown.map(d => ({ device: d.deviceType, count: d._count })),
       browsers: browserBreakdown.map(b => ({ browser: b.browser, count: b._count })),
@@ -154,7 +154,10 @@ export async function GET(request) {
         isActive: q.isActive,
         scans: q._count.scans,
       })),
-      hourlyDistribution,
+      hourlyDistribution: (hourlyDistribution || []).map(row => ({
+        hour: Number(row.hour),
+        scans: Number(row.scans) || 0,
+      })),
       period: { days, since: since.toISOString() },
     });
   } catch (error) {

@@ -16,6 +16,9 @@ async function main() {
       email: 'demo@redsproutdigital.com',
       password: hashedPassword,
       plan: 'BUSINESS',
+      phone: '+91 98765 43210',
+      company: 'RedSprout Digital',
+      website: 'https://redsproutdigital.com',
     },
   });
   console.log(`✅ User: ${user.email} (plan: ${user.plan})`);
@@ -37,7 +40,7 @@ async function main() {
     });
     console.log(`✅ QR: ${created.name} (${created.shortCode})`);
 
-    // Add some sample scans
+    // Add sample scans
     const scanCount = Math.floor(Math.random() * 50) + 10;
     const scans = [];
     const devices = ['mobile', 'desktop', 'tablet'];

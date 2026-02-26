@@ -52,10 +52,14 @@ model User {
   password      String?
   plan          Plan      @default(FREE)
   trialEndsAt   DateTime?
+  phone         String?
+  company       String?
+  website       String?
 
   accounts      Account[]
   sessions      Session[]
-  
+  qrCodes       QRCode[]
+
   // Team membership
   teamMembers   TeamMember[]
   ownedTeams    Team[]        @relation("TeamOwner")
@@ -78,19 +82,17 @@ model Team {
   slug        String   @unique
   ownerId     String
   owner       User     @relation("TeamOwner", fields: [ownerId], references: [id])
-  
-  // Branding (for agency white-label)
+
   logo        String?
   brandColor  String?  @default("#6ECBB5")
   customDomain String?
-  
+
   members     TeamMember[]
-  qrCodes     QRCode[]
   folders     Folder[]
   restaurants Restaurant[]
   products    Product[]
   clients     Client[]
-  
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -113,7 +115,6 @@ enum Role {
   VIEWER
 }
 
-// Agency clients (sub-accounts)
 model Client {
   id          String   @id @default(cuid())
   teamId      String
@@ -149,58 +150,50 @@ model QRCode {
   type            QRType      @default(STATIC)
   contentType     ContentType @default(URL)
 
-  // Data
   staticData      String?     @db.Text
   destinationUrl  String?     @db.Text
 
-  // Status
   isActive        Boolean     @default(true)
   isPaused        Boolean     @default(false)
   isArchived      Boolean     @default(false)
 
-  // Appearance
   fgColor         String      @default("#000000")
   bgColor         String      @default("#FFFFFF")
   logoUrl         String?
   size            Int         @default(400)
   errorCorrection String      @default("M")
 
-  // Organization
   tags            String[]    @default([])
   notes           String?     @db.Text
   folderId        String?
   folder          Folder?     @relation(fields: [folderId], references: [id])
 
-  // UTM
   utmSource       String?
   utmMedium       String?
   utmCampaign     String?
   utmContent      String?
   utmTerm         String?
 
-  // Security
   safePreview     Boolean     @default(false)
   password        String?
 
-  // Scheduling
   scheduledChanges ScheduledChange[]
-  
-  // Version history for dynamic QR
   urlHistory      UrlHistory[]
 
-  // Relations
-  teamId          String
-  team            Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  // FIXED: Owner is User directly (used by all API routes)
+  userId          String
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Optional agency client
   clientId        String?
   client          Client?     @relation(fields: [clientId], references: [id])
+
   scans           Scan[]
-  
-  // Restaurant link
+
   restaurantId    String?
   restaurant      Restaurant? @relation(fields: [restaurantId], references: [id])
   tableNumber     Int?
-  
-  // Product link
+
   productId       String?
   product         Product?    @relation(fields: [productId], references: [id])
 
@@ -208,7 +201,7 @@ model QRCode {
   updatedAt       DateTime    @updatedAt
   expiresAt       DateTime?
 
-  @@index([teamId])
+  @@index([userId])
   @@index([shortCode])
   @@index([folderId])
   @@index([isArchived])
@@ -270,7 +263,6 @@ model Scan {
   qrCodeId    String
   qrCode      QRCode   @relation(fields: [qrCodeId], references: [id], onDelete: Cascade)
 
-  // Geo
   ip          String?
   country     String?
   countryCode String?
@@ -279,21 +271,16 @@ model Scan {
   lat         Float?
   lng         Float?
 
-  // Device
   userAgent   String?  @db.Text
   deviceType  String?
   os          String?
   browser     String?
 
-  // UTM captured
   utmSource   String?
   utmMedium   String?
   utmCampaign String?
 
-  // Referrer
   referrer    String?
-  
-  // Unique tracking
   fingerprint String?
 
   scannedAt   DateTime @default(now())
@@ -319,25 +306,21 @@ model Restaurant {
   phone           String?
   whatsapp        String?
   address         String?
-  
-  // Features
+
   callWaiter      Boolean  @default(true)
   showBill        Boolean  @default(true)
   orderEnabled    Boolean  @default(false)
   feedbackEnabled Boolean  @default(true)
-  
-  // Multi-language
+
   languages       String[] @default(["en"])
   defaultLanguage String   @default("en")
-  
-  // Theme
   accentColor     String   @default("#6ECBB5")
-  
+
   categories      MenuCategory[]
   qrCodes         QRCode[]
   orders          Order[]
   feedback        Feedback[]
-  
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
@@ -347,7 +330,7 @@ model MenuCategory {
   restaurantId String
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   name         String
-  nameHi       String?    // Hindi
+  nameHi       String?
   description  String?
   sortOrder    Int        @default(0)
   isActive     Boolean    @default(true)
@@ -366,8 +349,7 @@ model MenuItem {
   descHi       String?
   price        Float
   image        String?
-  
-  // Dietary
+
   isVeg        Boolean @default(false)
   isVegan      Boolean @default(false)
   isNonVeg     Boolean @default(false)
@@ -376,15 +358,14 @@ model MenuItem {
   isDairyFree  Boolean @default(false)
   isHalal      Boolean @default(false)
   isJain       Boolean @default(false)
-  spiceLevel   Int     @default(0) // 0-3
+  spiceLevel   Int     @default(0)
   allergens    String[] @default([])
   calories     Int?
-  
-  // Status
+
   isAvailable  Boolean @default(true)
   isFeatured   Boolean @default(false)
   sortOrder    Int     @default(0)
-  
+
   orderItems   OrderItem[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -401,9 +382,9 @@ model Order {
   totalAmount  Float       @default(0)
   customerName String?
   customerPhone String?
-  
+
   items        OrderItem[]
-  
+
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
   @@index([restaurantId])
@@ -434,7 +415,7 @@ model Feedback {
   restaurantId String
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   tableNumber  Int?
-  rating       Int        // 1-5
+  rating       Int
   comment      String?
   customerName String?
   createdAt    DateTime   @default(now())
@@ -451,29 +432,25 @@ model Product {
   name        String
   description String?  @db.Text
   image       String?
-  
-  // GS1 fields
+
   gtin        String?
   batchNumber String?
   expiryDate  DateTime?
   serialNumber String?
-  
-  // Verify
+
   verifyEnabled Boolean @default(false)
   verifySerial  String?  @unique
-  
-  // Multi-language
+
   descHi      String?  @db.Text
   ingredients String?  @db.Text
   ingredientsHi String? @db.Text
-  
-  // Landing page
+
   websiteUrl  String?
   whatsapp    String?
-  
+
   qrCodes     QRCode[]
   verifications ProductVerification[]
-  
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -496,18 +473,18 @@ model ProductVerification {
 // ══════════════════════════════
 
 model Subscription {
-  id              String   @id @default(cuid())
-  teamId          String
-  razorpaySubId   String?  @unique
+  id              String    @id @default(cuid())
+  userId          String
+  razorpaySubId   String?   @unique
   razorpayPlanId  String?
-  plan            Plan     @default(FREE)
+  plan            Plan      @default(FREE)
   status          SubStatus @default(TRIALING)
   currentPeriodStart DateTime?
   currentPeriodEnd   DateTime?
   cancelledAt     DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  @@index([teamId])
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  @@index([userId])
 }
 
 enum SubStatus {
@@ -520,12 +497,13 @@ enum SubStatus {
 
 model Payment {
   id              String   @id @default(cuid())
-  teamId          String
+  userId          String
   razorpayPayId   String?  @unique
   razorpayOrderId String?
-  amount          Int      // in paise
+  amount          Int
   currency        String   @default("INR")
   status          String
   plan            Plan
   createdAt       DateTime @default(now())
+  @@index([userId])
 }

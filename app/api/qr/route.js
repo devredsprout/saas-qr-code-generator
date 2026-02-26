@@ -4,7 +4,6 @@ import { getSession, canCreate } from '@/lib/auth';
 import { generateShortCode } from '@/lib/shortcode';
 import { z } from 'zod';
 
-// Validation
 const createSchema = z.object({
   name: z.string().min(1).max(100),
   type: z.enum(['STATIC', 'DYNAMIC']),
@@ -23,13 +22,10 @@ const createSchema = z.object({
   safePreview: z.boolean().default(false),
 });
 
-// GET: List user's QR codes
 export async function GET(request) {
   try {
     const session = await getSession();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
@@ -48,9 +44,7 @@ export async function GET(request) {
     const [qrCodes, total] = await Promise.all([
       prisma.qRCode.findMany({
         where,
-        include: {
-          _count: { select: { scans: true } },
-        },
+        include: { _count: { select: { scans: true } } },
         orderBy: { [sort]: order },
         skip: (page - 1) * limit,
         take: limit,
@@ -58,54 +52,34 @@ export async function GET(request) {
       prisma.qRCode.count({ where }),
     ]);
 
-    return NextResponse.json({
-      qrCodes,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    });
+    return NextResponse.json({ qrCodes, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } });
   } catch (error) {
     console.error('GET /api/qr error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
-// POST: Create new QR code
 export async function POST(request) {
   try {
     const session = await getSession();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const body = await request.json();
     const data = createSchema.parse(body);
 
-    // Check plan limits
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
       select: { plan: true, _count: { select: { qrCodes: true } } },
     });
 
     if (!canCreate(user.plan, user._count.qrCodes, data.type)) {
-      return NextResponse.json(
-        { error: 'Plan limit reached. Please upgrade.' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: 'Plan limit reached. Please upgrade.' }, { status: 403 });
     }
 
-    // Dynamic QR requires Pro+
     if (data.type === 'DYNAMIC' && user.plan === 'FREE') {
-      return NextResponse.json(
-        { error: 'Dynamic QR codes require Pro plan or above.' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: 'Dynamic QR codes require Pro plan or above.' }, { status: 403 });
     }
 
-    // Generate unique short code
     let shortCode;
     let attempts = 0;
     do {
@@ -115,11 +89,8 @@ export async function POST(request) {
       attempts++;
     } while (attempts < 10);
 
-    if (attempts >= 10) {
-      return NextResponse.json({ error: 'Could not generate unique code' }, { status: 500 });
-    }
+    if (attempts >= 10) return NextResponse.json({ error: 'Could not generate unique code' }, { status: 500 });
 
-    // Create QR code
     const qrCode = await prisma.qRCode.create({
       data: {
         shortCode,
@@ -144,9 +115,7 @@ export async function POST(request) {
 
     return NextResponse.json(qrCode, { status: 201 });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: 'Validation error', details: error.errors }, { status: 400 });
-    }
+    if (error instanceof z.ZodError) return NextResponse.json({ error: 'Validation error', details: error.errors }, { status: 400 });
     console.error('POST /api/qr error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
